@@ -30,10 +30,6 @@ export default async function DashboardPage() {
       redirect("/dashboard/almacen")
     case "gerente":
       redirect("/dashboard/gerente")
-    case "gerente_almacen":
-      redirect("/dashboard/gerente-almacen")
-    case "cadena_suministro":
-      redirect("/dashboard/cadena-suministro")
     default:
       redirect("/auth/login")
   }
