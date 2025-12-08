@@ -1,140 +1,173 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { LogOut } from "lucide-react";
 import {
-  LogOut,
-  FileText,
-  CheckCircle2,
-  Clock,
-  ClipboardPlus,
-  Boxes,
-  MapPin,
-  Activity,
-} from "lucide-react"
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
+import { CreateFolioDialog } from "@/components/auxiliar/create-folio-dialog";
+import { InventoryManagement } from "@/components/almacen/inventory-management";
+import { SupervisorApprovalList } from "@/components/supervisor/supervisor-approval-list";
+import { GlobalInventoryView } from "@/components/gerente/global-inventory-view";
+import type { User, FolioRequest, Inventory } from "@/lib/types";
 
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
-import { createClient } from "@/lib/supabase/client"
-import { CreateFolioDialog } from "@/components/auxiliar/create-folio-dialog"
-import { InventoryManagement } from "@/components/almacen/inventory-management"
-import { SupervisorApprovalList } from "@/components/supervisor/supervisor-approval-list"
-
-import type { User, FolioRequest, Inventory } from "@/lib/types"
-
+// Props for the Gerente (operations manager) dashboard.  The gerente can
+// operate in the context of a selected hospital while still having a
+// global view of inventory and low‑stock alerts across all hospitals.
 interface GerenteDashboardProps {
-  user: User & { hospital?: any }
-  hospitals: any[]
-  folios: (FolioRequest & { auxiliar: any; hospital: any; folio_items: any[] })[]
-  inventory: Inventory[]
+  user: User & { hospital?: any };
+  hospitals: any[];
+  folios: (FolioRequest & {
+    auxiliar: any;
+    hospital: any;
+    folio_items: any[];
+  })[];
+  inventory: Inventory[];
 }
 
-export function GerenteDashboard({ user, hospitals, folios, inventory }: GerenteDashboardProps) {
-  const router = useRouter()
-  const [openCreateFolio, setOpenCreateFolio] = useState(false)
+/**
+ * The GerenteDashboard component renders a comprehensive management panel
+ * for the operations manager.  It retains the existing functionality of
+ * viewing and managing folios by hospital while adding a global view of
+ * inventory.  A new “Alertas de Insumos” card shows how many products
+ * across all hospitals are below their minimum stock level.  A new tab
+ * labeled "Insumos Globales" lists the inventory for every hospital and
+ * highlights low‑stock items.  By extracting these features into
+ * dedicated UI elements, the gerente can quickly spot shortages without
+ * cluttering the folio approval flow.
+ */
+export function GerenteDashboard({
+  user,
+  hospitals,
+  folios,
+  inventory,
+}: GerenteDashboardProps) {
+  const router = useRouter();
+  const [openCreateFolio, setOpenCreateFolio] = useState(false);
+  // Track which hospital is selected.  Default to the first hospital if
+  // available.
   const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>(
     hospitals.length > 0 ? hospitals[0].id : null,
-  )
+  );
+  // Track which tab is active.  Default to "pending" to show folios
+  // awaiting approval.
+  const [activeTab, setActiveTab] = useState<string>("pending");
 
+  // Log out and redirect to the login page using Supabase auth.
   const handleSignOut = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push("/auth/login")
-    router.refresh()
-  }
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/auth/login");
+    router.refresh();
+  };
 
-  // Hospital seleccionado
-  const selectedHospital = useMemo(
-    () => hospitals.find((h) => h.id === selectedHospitalId) || null,
-    [hospitals, selectedHospitalId],
-  )
+  // Find the currently selected hospital object for display.
+  const selectedHospital = useMemo(() => {
+    return hospitals.find((h) => h.id === selectedHospitalId) || null;
+  }, [hospitals, selectedHospitalId]);
 
-  // Folios filtrados por hospital
+  // Filter folios to those belonging to the selected hospital.
   const filteredFolios = useMemo(() => {
-    if (!selectedHospitalId) return []
-    return folios.filter((f) => f.hospital_id === selectedHospitalId)
-  }, [folios, selectedHospitalId])
+    if (!selectedHospitalId) return [];
+    return folios.filter((f) => f.hospital_id === selectedHospitalId);
+  }, [folios, selectedHospitalId]);
 
-  const pendingFolios = filteredFolios.filter((f) => f.status === "pendiente" || f.status === "aprobado_lider")
+  // Categorize folios by status for easy access.
+  const pendingFolios = filteredFolios.filter(
+    (f) => f.status === "pendiente" || f.status === "aprobado_lider",
+  );
   const approvedFolios = filteredFolios.filter(
     (f) => f.status === "aprobado_supervisor" || f.status === "entregado",
-  )
-  const rejectedFolios = filteredFolios.filter((f) => f.status === "rechazado")
+  );
+  const rejectedFolios = filteredFolios.filter((f) => f.status === "rechazado");
 
-  // Inventario filtrado por hospital
+  // Filter inventory to the selected hospital for per‑hospital adjustments.
   const filteredInventory = useMemo(() => {
-    if (!selectedHospitalId) return []
-    return inventory.filter((inv) => inv.hospital_id === selectedHospitalId)
-  }, [inventory, selectedHospitalId])
+    if (!selectedHospitalId) return [];
+    return inventory.filter((inv) => inv.hospital_id === selectedHospitalId);
+  }, [inventory, selectedHospitalId]);
 
-  // User "actuando" en el hospital seleccionado
-  const actingUser = useMemo(
-    () =>
-      selectedHospitalId
-        ? {
-            ...user,
-            hospital_id: selectedHospitalId,
-          }
-        : user,
-    [user, selectedHospitalId],
-  )
-
-  // Métricas sencillas de productividad del hospital seleccionado
+  // Derive productivity metrics for the selected hospital.  This
+  // summarizes the count of folios by status and the top products used.
   const productivityStats = useMemo(() => {
-    const total = filteredFolios.length
-    const byStatus: Record<string, number> = {}
+    const total = filteredFolios.length;
+    const byStatus: Record<string, number> = {};
     filteredFolios.forEach((f) => {
-      byStatus[f.status] = (byStatus[f.status] || 0) + 1
-    })
-
-    // Productos más utilizados (contando folio_items)
-    const productUsage: Record<string, { name: string; count: number }> = {}
+      byStatus[f.status] = (byStatus[f.status] || 0) + 1;
+    });
+    const productUsage: Record<string, { name: string; count: number }> = {};
     filteredFolios.forEach((f) => {
       f.folio_items?.forEach((fi: any) => {
-        const key = fi.product_id
-        const name = fi.product?.name || "Producto sin nombre"
+        const key = fi.product_id;
+        const name = fi.product?.name || "Producto sin nombre";
         if (!productUsage[key]) {
-          productUsage[key] = { name, count: 0 }
+          productUsage[key] = { name, count: 0 };
         }
-        productUsage[key].count += fi.quantity_requested ?? 0
-      })
-    })
-
+        productUsage[key].count += fi.quantity_requested ?? 0;
+      });
+    });
     const topProducts = Object.values(productUsage)
       .sort((a, b) => b.count - a.count)
-      .slice(0, 5)
+      .slice(0, 5);
+    return { total, byStatus, topProducts };
+  }, [filteredFolios]);
 
-    return { total, byStatus, topProducts }
-  }, [filteredFolios])
+  // Identify all inventory rows across hospitals where the quantity is
+  // below or equal to the product's minimum stock.  This drives the
+  // global alert counter and the contents of the "Insumos Globales" tab.
+  const lowStockGlobal = useMemo(() => {
+    return inventory.filter(
+      (inv) => inv.quantity <= (inv.product?.min_stock || 0),
+    );
+  }, [inventory]);
+
+  // The acting user clones the current user but overrides the
+  // hospital_id to match the selected hospital.  This is passed
+  // through to child components that expect a user with hospital_id.
+  const actingUser = useMemo(() => {
+    return selectedHospitalId ? { ...user, hospital_id: selectedHospitalId } : user;
+  }, [user, selectedHospitalId]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-100">
+    <div className="space-y-4">
       {/* Header */}
-      <header className="border-b bg-white shadow-sm">
-        <div className="container mx-auto flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Panel de Gerente de Operaciones</h1>
-            <p className="text-sm text-gray-600">{user.full_name}</p>
-            {selectedHospital && (
-              <p className="mt-1 flex items-center text-xs text-gray-500">
-                <MapPin className="mr-1 h-3 w-3" />
-                Hospital seleccionado:
-                <span className="ml-1 font-medium text-gray-800">{selectedHospital.name}</span>
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-            {/* Selector de hospital */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Panel de Gerente de Operaciones</h1>
+          <p className="text-sm text-muted-foreground">{user.full_name}</p>
+          {selectedHospital && (
+            <p className="text-sm text-muted-foreground">
+              Hospital seleccionado: {selectedHospital.name}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {hospitals.length > 0 && (
             <Select
-              value={selectedHospitalId ?? undefined}
+              value={selectedHospitalId ?? ""}
               onValueChange={(value) => setSelectedHospitalId(value)}
             >
-              <SelectTrigger className="w-full sm:w-72">
-                <SelectValue placeholder="Selecciona un hospital" />
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Selecciona hospital" />
               </SelectTrigger>
               <SelectContent>
                 {hospitals.map((hospital) => (
@@ -144,235 +177,214 @@ export function GerenteDashboard({ user, hospitals, folios, inventory }: Gerente
                 ))}
               </SelectContent>
             </Select>
-
-            <Button variant="outline" onClick={handleSignOut}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Cerrar Sesión
-            </Button>
-          </div>
+          )}
+          <Button variant="outline" onClick={handleSignOut}>
+            <LogOut className="w-4 h-4 mr-2" /> Cerrar Sesión
+          </Button>
         </div>
-      </header>
+      </div>
 
-      <main className="container mx-auto p-6">
-        {/* Stats Cards */}
-        <div className="mb-6 grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pendientes / En revisión</CardTitle>
-              <Clock className="h-4 w-4 text-yellow-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{pendingFolios.length}</div>
-              <p className="text-xs text-muted-foreground">Folios aún en flujo de aprobación</p>
-            </CardContent>
-          </Card>
+      {/* Statistic cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Pendientes / En revisión</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{pendingFolios.length}</p>
+            <p className="text-sm text-muted-foreground">
+              Folios aún en flujo de aprobación
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Aprobados / Entregados</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{approvedFolios.length}</p>
+            <p className="text-sm text-muted-foreground">
+              Folios que ya pasaron por almacén
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Total Folios del Hospital</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{filteredFolios.length}</p>
+            <p className="text-sm text-muted-foreground">
+              Histórico del hospital seleccionado
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Alertas de Insumos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{lowStockGlobal.length}</p>
+            <p className="text-sm text-muted-foreground">
+              Productos con stock bajo en todos los hospitales
+            </p>
+          </CardContent>
+        </Card>
+      </div>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Aprobados / Entregados</CardTitle>
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{approvedFolios.length}</div>
-              <p className="text-xs text-muted-foreground">Folios que ya pasaron por almacén</p>
-            </CardContent>
-          </Card>
+      {/* Tabs for different sections */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="flex flex-wrap gap-2">
+          <TabsTrigger value="pending">Pendientes ({pendingFolios.length})</TabsTrigger>
+          <TabsTrigger value="approved">Aprobados ({approvedFolios.length})</TabsTrigger>
+          <TabsTrigger value="all">Todos ({filteredFolios.length})</TabsTrigger>
+          <TabsTrigger value="productivity">Productividad</TabsTrigger>
+          <TabsTrigger value="register-folio">Registrar Folio</TabsTrigger>
+          <TabsTrigger value="register-inventory">Registrar Insumo</TabsTrigger>
+          <TabsTrigger value="global-inventory">
+            Insumos Globales ({lowStockGlobal.length})
+          </TabsTrigger>
+        </TabsList>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Folios del Hospital</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{filteredFolios.length}</div>
-              <p className="text-xs text-muted-foreground">Histórico del hospital seleccionado</p>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Tab: Pending folios */}
+        <TabsContent value="pending">
+          <SupervisorApprovalList
+            folios={pendingFolios}
+            user={actingUser}
+            onActionComplete={() => router.refresh()}
+          />
+        </TabsContent>
 
-        {selectedHospitalId ? (
-          <Tabs defaultValue="registrarFolio" className="space-y-6">
-            <TabsList className="flex flex-wrap gap-2">
-              <TabsTrigger value="registrarFolio">
-                <ClipboardPlus className="mr-2 h-4 w-4" />
-                Registrar Folio
-              </TabsTrigger>
+        {/* Tab: Approved folios */}
+        <TabsContent value="approved">
+          <SupervisorApprovalList
+            folios={approvedFolios}
+            user={actingUser}
+            onActionComplete={() => router.refresh()}
+          />
+        </TabsContent>
 
-              <TabsTrigger value="registrarInsumo">
-                <Boxes className="mr-2 h-4 w-4" />
-                Registrar Insumo
-              </TabsTrigger>
+        {/* Tab: All folios */}
+        <TabsContent value="all">
+          <SupervisorApprovalList
+            folios={filteredFolios}
+            user={actingUser}
+            readOnly
+            onActionComplete={() => router.refresh()}
+          />
+        </TabsContent>
 
-              <TabsTrigger value="pending">
-                Pendientes ({pendingFolios.length})
-              </TabsTrigger>
-
-              <TabsTrigger value="approved">
-                Aprobados ({approvedFolios.length})
-              </TabsTrigger>
-
-              <TabsTrigger value="all">
-                Todos ({filteredFolios.length})
-              </TabsTrigger>
-
-              <TabsTrigger value="productividad">
-                <Activity className="mr-2 h-4 w-4" />
-                Productividad
-              </TabsTrigger>
-            </TabsList>
-
-            {/* TAB: Registrar folio */}
-            <TabsContent value="registrarFolio" className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold">Registrar Folio</h2>
+        {/* Tab: Productivity */}
+        <TabsContent value="productivity">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Total de folios</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-4xl font-bold">{productivityStats.total}</p>
+                <p className="text-sm text-muted-foreground">
+                  Folios totales del hospital seleccionado
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Rechazados</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-4xl font-bold">{rejectedFolios.length}</p>
+                <p className="text-sm text-muted-foreground">
+                  Folios rechazados en el flujo
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle>Estados</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {Object.entries(productivityStats.byStatus).map(([status, count]) => (
+                  <div key={status} className="flex justify-between py-1">
+                    <span className="capitalize">{status.replace("_", " ")}</span>
+                    <span className="font-medium">{count}</span>
+                  </div>
+                ))}
+                {Object.keys(productivityStats.byStatus).length === 0 && (
                   <p className="text-sm text-muted-foreground">
-                    Crea folios como si fueras cualquier usuario operativo del hospital seleccionado.
+                    Sin folios en este hospital.
                   </p>
-                </div>
-                <Button onClick={() => setOpenCreateFolio(true)}>
-                  <ClipboardPlus className="mr-2 h-4 w-4" />
-                  Crear Folio
-                </Button>
-              </div>
-
-              <CreateFolioDialog
-                open={openCreateFolio}
-                onOpenChange={setOpenCreateFolio}
-                user={actingUser}
-                inventory={filteredInventory}
-                onSuccess={() => router.refresh()}
-              />
-            </TabsContent>
-
-            {/* TAB: Registrar insumo */}
-            <TabsContent value="registrarInsumo">
-              <div className="space-y-2 mb-4">
-                <h2 className="text-xl font-semibold">Registrar Insumo en Almacén</h2>
-                <p className="text-sm text-muted-foreground">
-                  Ajusta existencias, entradas y salidas del almacén del hospital seleccionado.
-                </p>
-              </div>
-              <InventoryManagement user={actingUser} inventory={filteredInventory} />
-            </TabsContent>
-
-            {/* TAB: Pendientes */}
-            <TabsContent value="pending" className="space-y-4">
-              <div>
-                <h2 className="text-xl font-semibold">Folios Pendientes / En flujo</h2>
-                <p className="text-sm text-muted-foreground">
-                  Folios que siguen en proceso de aprobación o están pendientes de almacén.
-                </p>
-              </div>
-              <SupervisorApprovalList
-                folios={pendingFolios}
-                userId={user.id}
-                onUpdate={() => router.refresh()}
-              />
-            </TabsContent>
-
-            {/* TAB: Aprobados */}
-            <TabsContent value="approved" className="space-y-4">
-              <div>
-                <h2 className="text-xl font-semibold">Folios Aprobados y Entregados</h2>
-                <p className="text-sm text-muted-foreground">
-                  Folios que ya fueron aprobados por supervisor o entregados por almacén.
-                </p>
-              </div>
-              <SupervisorApprovalList
-                folios={approvedFolios}
-                userId={user.id}
-                onUpdate={() => router.refresh()}
-                readOnly
-              />
-            </TabsContent>
-
-            {/* TAB: Todos */}
-            <TabsContent value="all" className="space-y-4">
-              <div>
-                <h2 className="text-xl font-semibold">Todos los Folios del Hospital</h2>
-                <p className="text-sm text-muted-foreground">
-                  Vista completa del historial de folios del hospital seleccionado.
-                </p>
-              </div>
-              <SupervisorApprovalList
-                folios={filteredFolios}
-                userId={user.id}
-                onUpdate={() => router.refresh()}
-                readOnly
-              />
-            </TabsContent>
-
-            {/* TAB: Productividad */}
-            <TabsContent value="productividad" className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Total de folios</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{productivityStats.total}</div>
-                    <p className="text-xs text-muted-foreground">
-                      Folios totales del hospital seleccionado
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Rechazados</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{rejectedFolios.length}</div>
-                    <p className="text-xs text-muted-foreground">Folios rechazados en el flujo</p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium">Estados</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-1 text-xs">
-                    {Object.entries(productivityStats.byStatus).map(([status, count]) => (
-                      <div key={status} className="flex justify-between">
-                        <span className="capitalize">{status.replace("_", " ")}</span>
-                        <span className="font-semibold">{count as number}</span>
-                      </div>
-                    ))}
-                    {Object.keys(productivityStats.byStatus).length === 0 && (
-                      <p className="text-muted-foreground">Sin folios en este hospital.</p>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm font-medium">Insumos más utilizados</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  {productivityStats.topProducts.length > 0 ? (
-                    productivityStats.topProducts.map((p) => (
-                      <div key={p.name} className="flex justify-between border-b pb-1 last:border-b-0">
+                )}
+              </CardContent>
+            </Card>
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle>Insumos más utilizados</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {productivityStats.topProducts.length > 0 ? (
+                  <ul className="space-y-1">
+                    {productivityStats.topProducts.map((p) => (
+                      <li key={p.name} className="flex justify-between">
                         <span>{p.name}</span>
-                        <span className="font-semibold">{p.count}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Aún no hay datos suficientes de consumo para este hospital.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        ) : (
-          <div className="rounded-lg border bg-white p-6 text-center text-sm text-muted-foreground">
-            No hay hospitales disponibles para mostrar.
+                        <span className="font-medium">{p.count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Aún no hay datos suficientes de consumo para este hospital.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
           </div>
-        )}
-      </main>
+        </TabsContent>
+
+        {/* Tab: Register a new folio */}
+        <TabsContent value="register-folio">
+          <div className="p-4 space-y-4">
+            <h2 className="text-lg font-semibold">Registrar Folio</h2>
+            <p className="text-sm text-muted-foreground">
+              Crea folios como si fueras cualquier usuario operativo del hospital seleccionado.
+            </p>
+            <Button onClick={() => setOpenCreateFolio(true)}>Crear Folio</Button>
+            <CreateFolioDialog
+              open={openCreateFolio}
+              onOpenChange={setOpenCreateFolio}
+              actingUser={actingUser}
+              onCreated={() => {
+                router.refresh();
+              }}
+            />
+          </div>
+        </TabsContent>
+
+        {/* Tab: Register inventory adjustments */}
+        <TabsContent value="register-inventory">
+          <div className="p-4 space-y-4">
+            <h2 className="text-lg font-semibold">Registrar Insumo en Almacén</h2>
+            <p className="text-sm text-muted-foreground">
+              Ajusta existencias, entradas y salidas del almacén del hospital seleccionado.
+            </p>
+            <InventoryManagement
+              user={actingUser}
+              inventory={filteredInventory}
+              onUpdated={() => {
+                router.refresh();
+              }}
+            />
+          </div>
+        </TabsContent>
+
+        {/* Tab: Global inventory view */}
+        <TabsContent value="global-inventory">
+          <div className="p-4 space-y-4">
+            <h2 className="text-lg font-semibold">Inventario Global y Alertas</h2>
+            <GlobalInventoryView inventory={inventory} />
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
-  )
+  );
 }
