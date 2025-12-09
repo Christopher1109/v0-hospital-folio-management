@@ -32,8 +32,11 @@ export default async function GerentePage() {
     .select("*")
     .order("name", { ascending: true })
 
-  const hospitalsList = hospitals || []
-  const hospitalIds = hospitalsList.map((h) => h.id)
+  if (hospitalsError || !hospitals) {
+    redirect("/dashboard")
+  }
+
+  const hospitalIds = hospitals.map((h) => h.id)
 
   // 4. Todos los folios de todos los hospitales
   const { data: folios } = await supabase
@@ -66,6 +69,11 @@ export default async function GerentePage() {
     .in("hospital_id", hospitalIds)
 
   return (
-    <GerenteDashboard user={userData} hospitals={hospitalsList} folios={folios || []} inventory={inventory || []} />
+    <GerenteDashboard
+      user={userData}
+      hospitals={hospitals}
+      folios={folios || []}
+      inventory={inventory || []}
+    />
   )
 }
