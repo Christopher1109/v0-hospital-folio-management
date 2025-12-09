@@ -17,16 +17,19 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 
+// Tipos genéricos para no romper tu tipado actual
 type AnyUser = any;
 type AnyHospital = any;
 type AnyFolio = any;
 type AnyInventory = any;
+type AnyRestock = any;
 
 interface GerenteDashboardProps {
   user: AnyUser;
   hospitals: AnyHospital[];
   folios: AnyFolio[];
   inventory: AnyInventory[];
+  restockRequests: AnyRestock[];
 }
 
 export function GerenteDashboard({
@@ -34,55 +37,51 @@ export function GerenteDashboard({
   hospitals,
   folios,
   inventory,
+  restockRequests,
 }: GerenteDashboardProps) {
   const router = useRouter();
   const supabase = createClient();
 
-  // Hospital seleccionado para crear folios y modificar inventario
+  // Hospital seleccionado para folios e inventario
   const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>(
     hospitals.length > 0 ? hospitals[0].id : null,
   );
 
-  // Sección activa del dashboard
+  // Sección activa
   const [activeSection, setActiveSection] = useState<
     "dashboard" | "folios" | "inventario" | "alertas"
   >("dashboard");
 
-  // ---- ESTADO: creación de folio ----
+  // --- CREAR FOLIO ---
   const [newFolioHospitalId, setNewFolioHospitalId] = useState<string | null>(
     hospitals.length > 0 ? hospitals[0].id : null,
   );
   const [newFolioPatientName, setNewFolioPatientName] = useState("");
   const [newFolioSurgeryType, setNewFolioSurgeryType] = useState("");
   const [newFolioUrgency, setNewFolioUrgency] = useState("");
-
   const [isCreatingFolio, setIsCreatingFolio] = useState(false);
 
-  // ---- ESTADO: actualización de inventario ----
+  // --- EDITAR INVENTARIO ---
   const [editingInventory, setEditingInventory] = useState<{
     [inventoryId: string]: string;
   }>({});
-
   const [isUpdatingInventoryId, setIsUpdatingInventoryId] = useState<
     string | null
   >(null);
 
-  // -------- FILTROS BÁSICOS --------
+  // ---- FILTRADOS ----
 
-  // Folios del hospital seleccionado (para la sección "Folios")
   const filteredFolios = useMemo(() => {
     if (!selectedHospitalId) return [];
     return folios.filter((f) => f.hospital_id === selectedHospitalId);
   }, [folios, selectedHospitalId]);
 
-  // Inventario del hospital seleccionado (para "Inventario")
   const filteredInventory = useMemo(() => {
     if (!selectedHospitalId) return [];
     return inventory.filter((inv) => inv.hospital_id === selectedHospitalId);
   }, [inventory, selectedHospitalId]);
 
-  // ---- ALERTAS: todos los hospitales, no solo el seleccionado ----
-  // Un item está en alerta si quantity <= min_stock (si min_stock no existe, se toma 0)
+  // ALERTAS: todos los hospitales
   const lowStockItems = useMemo(() => {
     return inventory.filter((inv) => {
       const minStock = inv.product?.min_stock ?? 0;
@@ -90,7 +89,7 @@ export function GerenteDashboard({
     });
   }, [inventory]);
 
-  // -------- KPIs SIMPLES PARA DASHBOARD --------
+  // -------- KPIs --------
 
   const totalFolios = folios.length;
   const foliosPendientes = folios.filter(
@@ -106,7 +105,7 @@ export function GerenteDashboard({
 
   const lowStockCount = lowStockItems.length;
 
-  // -------- HANDLERS: CREAR FOLIO --------
+  // -------- CREAR FOLIO --------
 
   const handleCreateFolio = async () => {
     if (!newFolioHospitalId) return;
@@ -115,8 +114,6 @@ export function GerenteDashboard({
     try {
       setIsCreatingFolio(true);
 
-      // Inserción mínima en folio_requests.
-      // Ajusta nombres de columnas según tu esquema.
       const { error } = await supabase.from("folio_requests").insert({
         hospital_id: newFolioHospitalId,
         status: "pendiente",
@@ -129,11 +126,9 @@ export function GerenteDashboard({
       if (error) {
         console.error("Error al crear folio:", error);
       } else {
-        // Limpiar formulario
         setNewFolioPatientName("");
         setNewFolioSurgeryType("");
         setNewFolioUrgency("");
-        // Refrescar datos del servidor
         router.refresh();
       }
     } finally {
@@ -141,7 +136,7 @@ export function GerenteDashboard({
     }
   };
 
-  // -------- HANDLERS: ACTUALIZAR INVENTARIO --------
+  // -------- EDITAR INVENTARIO --------
 
   const handleInventoryInputChange = (id: string, value: string) => {
     setEditingInventory((prev) => ({
@@ -174,11 +169,78 @@ export function GerenteDashboard({
     }
   };
 
-  // -------- HANDLERS: ENVIAR ALERTA (CARPETA) --------
-  // Estas funciones suponen una tabla hospital_restock_requests o parecida
+  // -------- STATUS DE ALERTAS --------
 
-  const sendAlert = async (invRow: any, assignedTo: "gerente_almacen" | "cadena_suministro") => {
+  function getAlertStatus(invRow: any) {
+    const related: AnyRestock[] = restockRequests.filter(
+      (r) =>
+        r.hospital_id === invRow.hospital_id &&
+        r.product_id === invRow.product_id,
+    );
+
+    if (related.length === 0) {
+      return {
+        label: "Sin enviar",
+        hasAlmacenPending: false,
+        hasCadenaPending: false,
+      };
+    }
+
+    const almacenPending = related.some(
+      (r) => r.assigned_to === "gerente_almacen" && r.status === "pendiente",
+    );
+    const cadenaPending = related.some(
+      (r) => r.assigned_to === "cadena_suministro" && r.status === "pendiente",
+    );
+
+    const anyProcesado = related.some(
+      (r) => r.status === "procesado" || r.status === "completado",
+    );
+
+    let label = "";
+    if (almacenPending && cadenaPending) {
+      label = "Enviado a almacén y cadena (pendiente)";
+    } else if (almacenPending) {
+      label = "Enviado a almacén (pendiente)";
+    } else if (cadenaPending) {
+      label = "Enviado a cadena (pendiente)";
+    } else if (anyProcesado) {
+      label = "Procesado";
+    } else {
+      label = "Enviado (en espera)";
+    }
+
+    return {
+      label,
+      hasAlmacenPending: almacenPending,
+      hasCadenaPending: cadenaPending,
+    };
+  }
+
+  // -------- ENVIAR ALERTA (CREAR “CARPETA”) --------
+
+  const sendAlert = async (
+    invRow: any,
+    assignedTo: "gerente_almacen" | "cadena_suministro",
+  ) => {
     try {
+      // No permitir doble envío PENDIENTE al mismo destino
+      const alreadyPending = restockRequests.some(
+        (r) =>
+          r.hospital_id === invRow.hospital_id &&
+          r.product_id === invRow.product_id &&
+          r.assigned_to === assignedTo &&
+          r.status === "pendiente",
+      );
+
+      if (alreadyPending) {
+        console.log(
+          "Ya existe una solicitud pendiente para este insumo y destino:",
+          assignedTo,
+        );
+        return;
+      }
+
       const minStock = invRow.product?.min_stock ?? 0;
       const suggestedQty =
         minStock > invRow.quantity ? minStock - invRow.quantity : minStock;
@@ -186,7 +248,6 @@ export function GerenteDashboard({
       const { error } = await supabase.from("hospital_restock_requests").insert({
         hospital_id: invRow.hospital_id,
         product_id: invRow.product_id,
-        // puedes ajustar estos campos según tu esquema
         current_quantity: invRow.quantity,
         min_stock: minStock,
         requested_qty: suggestedQty,
@@ -205,7 +266,7 @@ export function GerenteDashboard({
     }
   };
 
-  // -------- NAV ITEMS PARA RoleShell --------
+  // -------- NAV --------
 
   const navItems = [
     { id: "dashboard", label: "Resumen" },
@@ -226,14 +287,16 @@ export function GerenteDashboard({
       navItems={navItems}
       activeSection={activeSection}
       onSectionChange={(id) =>
-        setActiveSection(id as "dashboard" | "folios" | "inventario" | "alertas")
+        setActiveSection(
+          id as "dashboard" | "folios" | "inventario" | "alertas",
+        )
       }
       onSignOut={async () => {
         await supabase.auth.signOut();
         router.push("/auth/login");
       }}
     >
-      {/* ------- SECCIÓN RESUMEN ------- */}
+      {/* ------- RESUMEN ------- */}
       {activeSection === "dashboard" && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
@@ -277,19 +340,19 @@ export function GerenteDashboard({
               <p className="text-lg">
                 {lowStockCount === 0
                   ? "No hay alertas de stock bajo."
-                  : `Hay ${lowStockCount} insumo(s) con stock por debajo del mínimo.`}
+                  : `Hay ${lowStockCount} insumo(s) con stock por debajo del mínimo en la red hospitalaria.`}
               </p>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* ------- SECCIÓN FOLIOS ------- */}
+      {/* ------- FOLIOS ------- */}
       {activeSection === "folios" && (
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Crear folio (hospital seleccionado)</CardTitle>
+              <CardTitle>Crear folio</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -344,9 +407,9 @@ export function GerenteDashboard({
                 {isCreatingFolio ? "Creando..." : "Crear folio"}
               </Button>
               <p className="text-xs text-muted-foreground">
-                * Este formulario crea un folio sencillo con estado{" "}
-                <strong>pendiente</strong>. Ajusta las columnas del insert según tu
-                esquema de <code>folio_requests</code>.
+                * Crea un folio con estado <strong>pendiente</strong>. Ajusta las
+                columnas del insert según tu esquema de{" "}
+                <code>folio_requests</code>.
               </p>
             </CardContent>
           </Card>
@@ -401,14 +464,12 @@ export function GerenteDashboard({
         </div>
       )}
 
-      {/* ------- SECCIÓN INVENTARIO ------- */}
+      {/* ------- INVENTARIO ------- */}
       {activeSection === "inventario" && (
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>
-                Inventario del hospital seleccionado
-              </CardTitle>
+              <CardTitle>Inventario del hospital seleccionado</CardTitle>
             </CardHeader>
             <CardContent>
               {(!selectedHospitalId || filteredInventory.length === 0) && (
@@ -474,7 +535,7 @@ export function GerenteDashboard({
         </div>
       )}
 
-      {/* ------- SECCIÓN ALERTAS (todos los hospitales) ------- */}
+      {/* ------- ALERTAS ------- */}
       {activeSection === "alertas" && (
         <div className="space-y-6">
           <Card>
@@ -499,56 +560,64 @@ export function GerenteDashboard({
                         <th className="text-left py-2">Producto</th>
                         <th className="text-left py-2">Cantidad</th>
                         <th className="text-left py-2">Mínimo</th>
+                        <th className="text-left py-2">Estatus</th>
                         <th className="text-left py-2">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {lowStockItems.map((inv) => (
-                        <tr key={inv.id} className="border-b">
-                          <td className="py-2 pr-2">
-                            {inv.hospital?.name || inv.hospital_id}
-                          </td>
-                          <td className="py-2 pr-2">
-                            {inv.product?.name || inv.product_id}
-                          </td>
-                          <td className="py-2 pr-2">{inv.quantity}</td>
-                          <td className="py-2 pr-2">
-                            {inv.product?.min_stock ?? "—"}
-                          </td>
-                          <td className="py-2 pr-2">
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  sendAlert(inv, "gerente_almacen")
-                                }
-                              >
-                                Enviar a almacén
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  sendAlert(inv, "cadena_suministro")
-                                }
-                              >
-                                Enviar a cadena
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {lowStockItems.map((inv) => {
+                        const status = getAlertStatus(inv);
+                        return (
+                          <tr key={inv.id} className="border-b">
+                            <td className="py-2 pr-2">
+                              {inv.hospital?.name || inv.hospital_id}
+                            </td>
+                            <td className="py-2 pr-2">
+                              {inv.product?.name || inv.product_id}
+                            </td>
+                            <td className="py-2 pr-2">{inv.quantity}</td>
+                            <td className="py-2 pr-2">
+                              {inv.product?.min_stock ?? "—"}
+                            </td>
+                            <td className="py-2 pr-2">{status.label}</td>
+                            <td className="py-2 pr-2">
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    sendAlert(inv, "gerente_almacen")
+                                  }
+                                  disabled={status.hasAlmacenPending}
+                                >
+                                  Enviar a almacén
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    sendAlert(inv, "cadena_suministro")
+                                  }
+                                  disabled={status.hasCadenaPending}
+                                >
+                                  Enviar a cadena
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               )}
 
               <p className="mt-3 text-xs text-muted-foreground">
-                * Estas acciones crean “carpetas”/solicitudes en la tabla{" "}
-                <code>hospital_restock_requests</code> asignadas a gerente de
-                almacén o cadena de suministro. Ajusta los nombres de columnas
-                según tu esquema real.
+                * El gerente sigue viendo todas las alertas y su estatus, incluso
+                después de enviarlas. Las solicitudes se registran en{" "}
+                <code>hospital_restock_requests</code> con{" "}
+                <code>assigned_to</code> = gerente de almacén o cadena de
+                suministro.
               </p>
             </CardContent>
           </Card>
