@@ -40,7 +40,7 @@ export function GerenteDashboard(props: GerenteDashboardProps) {
   const inventory: AnyInventory[] = Array.isArray(props.inventory) ? props.inventory : []
 
   const [selectedHospitalId, setSelectedHospitalId] = useState<string | null>(
-    hospitals.length > 0 ? hospitals[0].id : null,
+    hospitals.length > 0 && hospitals[0]?.id ? hospitals[0].id : null,
   )
 
   const [openCreateFolio, setOpenCreateFolio] = useState(false)
@@ -52,27 +52,27 @@ export function GerenteDashboard(props: GerenteDashboardProps) {
   }
 
   const selectedHospital = useMemo(
-    () => hospitals.find((h: any) => h.id === selectedHospitalId) ?? null,
+    () => hospitals.find((h: any) => h?.id === selectedHospitalId) ?? null,
     [hospitals, selectedHospitalId],
   )
 
   /** Folios filtrados por hospital seleccionado (igual que supervisor) */
   const hospitalFolios = useMemo(() => {
     if (!selectedHospitalId) return []
-    return folios.filter((f: any) => f.hospital_id === selectedHospitalId)
+    return folios.filter((f: any) => f?.hospital_id === selectedHospitalId)
   }, [folios, selectedHospitalId])
 
   const pendingHospitalFolios = hospitalFolios.filter(
-    (f: any) => f.status === "pendiente" || f.status === "aprobado_lider",
+    (f: any) => f?.status === "pendiente" || f?.status === "aprobado_lider",
   )
   const approvedHospitalFolios = hospitalFolios.filter(
-    (f: any) => f.status === "aprobado_supervisor" || f.status === "entregado",
+    (f: any) => f?.status === "aprobado_supervisor" || f?.status === "entregado",
   )
 
   /** Inventario filtrado por hospital seleccionado */
   const hospitalInventory = useMemo(() => {
     if (!selectedHospitalId) return []
-    return inventory.filter((inv: any) => inv.hospital_id === selectedHospitalId)
+    return inventory.filter((inv: any) => inv?.hospital_id === selectedHospitalId)
   }, [inventory, selectedHospitalId])
 
   /** Stock bajo global (todos los hospitales) */
@@ -80,32 +80,35 @@ export function GerenteDashboard(props: GerenteDashboardProps) {
     () =>
       inventory.filter(
         (inv: any) =>
-          inv.quantity !== null && inv.quantity !== undefined && inv.quantity <= (inv.product?.min_stock ?? 0),
+          inv?.quantity !== null && inv?.quantity !== undefined && inv?.quantity <= (inv?.product?.min_stock ?? 0),
       ),
     [inventory],
   )
 
   /** Resumen por hospital para la pestaña "Resumen Hospitales" */
   const hospitalsSummary = useMemo(() => {
-    return hospitals.map((h: any) => {
-      const hf = folios.filter((f: any) => f.hospital_id === h.id)
-      const total = hf.length
-      const pending = hf.filter((f: any) => f.status === "pendiente" || f.status === "aprobado_lider").length
-      const approved = hf.filter((f: any) => f.status === "aprobado_supervisor" || f.status === "entregado").length
-      const rejected = hf.filter((f: any) => f.status === "rechazado").length
+    return hospitals
+      .map((h: any) => {
+        if (!h?.id) return null
+        const hf = folios.filter((f: any) => f?.hospital_id === h.id)
+        const total = hf.length
+        const pending = hf.filter((f: any) => f?.status === "pendiente" || f?.status === "aprobado_lider").length
+        const approved = hf.filter((f: any) => f?.status === "aprobado_supervisor" || f?.status === "entregado").length
+        const rejected = hf.filter((f: any) => f?.status === "rechazado").length
 
-      const hosInventory = inventory.filter((inv: any) => inv.hospital_id === h.id)
-      const inventoryCount = hosInventory.length
+        const hosInventory = inventory.filter((inv: any) => inv?.hospital_id === h.id)
+        const inventoryCount = hosInventory.length
 
-      return {
-        hospital: h,
-        total,
-        pending,
-        approved,
-        rejected,
-        inventoryCount,
-      }
-    })
+        return {
+          hospital: h,
+          total,
+          pending,
+          approved,
+          rejected,
+          inventoryCount,
+        }
+      })
+      .filter(Boolean) // Filtrar elementos null
   }, [hospitals, folios, inventory])
 
   const actingUser = useMemo(() => ({ ...user, hospital_id: selectedHospitalId }), [user, selectedHospitalId])
@@ -240,31 +243,34 @@ export function GerenteDashboard(props: GerenteDashboardProps) {
             <h2 className="text-base font-semibold">Resumen por hospital</h2>
             <p className="text-xs text-slate-500">Métricas clave de cada hospital en la red.</p>
             <div className="grid gap-4 md:grid-cols-2">
-              {hospitalsSummary.map((item) => (
-                <Card key={item.hospital.id} className="shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">{item.hospital.name}</CardTitle>
-                    {item.hospital.location && <p className="text-[11px] text-slate-500">{item.hospital.location}</p>}
-                  </CardHeader>
-                  <CardContent className="space-y-1 text-xs text-slate-600">
-                    <p>
-                      Folios totales: <span className="font-semibold">{item.total}</span>
-                    </p>
-                    <p>
-                      En proceso: <span className="font-semibold">{item.pending}</span>
-                    </p>
-                    <p>
-                      Entregados / aprobados: <span className="font-semibold">{item.approved}</span>
-                    </p>
-                    <p>
-                      Rechazados: <span className="font-semibold">{item.rejected}</span>
-                    </p>
-                    <p>
-                      Inventario: <span className="font-semibold">{item.inventoryCount} productos</span>
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
+              {hospitalsSummary.map((item) => {
+                if (!item?.hospital?.id) return null
+                return (
+                  <Card key={item.hospital.id} className="shadow-sm">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-semibold">{item.hospital.name}</CardTitle>
+                      {item.hospital.location && <p className="text-[11px] text-slate-500">{item.hospital.location}</p>}
+                    </CardHeader>
+                    <CardContent className="space-y-1 text-xs text-slate-600">
+                      <p>
+                        Folios totales: <span className="font-semibold">{item.total}</span>
+                      </p>
+                      <p>
+                        En proceso: <span className="font-semibold">{item.pending}</span>
+                      </p>
+                      <p>
+                        Entregados / aprobados: <span className="font-semibold">{item.approved}</span>
+                      </p>
+                      <p>
+                        Rechazados: <span className="font-semibold">{item.rejected}</span>
+                      </p>
+                      <p>
+                        Inventario: <span className="font-semibold">{item.inventoryCount} productos</span>
+                      </p>
+                    </CardContent>
+                  </Card>
+                )
+              })}
             </div>
           </TabsContent>
         </Tabs>
