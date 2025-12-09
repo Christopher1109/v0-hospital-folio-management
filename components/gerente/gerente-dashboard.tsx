@@ -28,6 +28,9 @@ import { CreateFolioDialog } from "@/components/auxiliar/create-folio-dialog";
 import { InventoryManagement } from "@/components/almacen/inventory-management";
 import { SupervisorApprovalList } from "@/components/supervisor/supervisor-approval-list";
 import { GlobalInventoryView } from "@/components/gerente/global-inventory-view";
+// Import additional components for global views
+import { GlobalFoliosList } from "@/components/gerente/global-folios-list";
+import { HospitalStats } from "@/components/gerente/hospital-stats";
 import type { User, FolioRequest, Inventory } from "@/lib/types";
 
 // Props for the Gerente (operations manager) dashboard.  The gerente can
@@ -244,6 +247,13 @@ export function GerenteDashboard({
           <TabsTrigger value="global-inventory">
             Insumos Globales ({lowStockGlobal.length})
           </TabsTrigger>
+          {/* Global views: list of all folios and stats per hospital */}
+          <TabsTrigger value="global-folios">
+            Folios Globales ({folios.length})
+          </TabsTrigger>
+          <TabsTrigger value="hospital-stats">
+            Resumen Hospitales
+          </TabsTrigger>
         </TabsList>
 
         {/* Tab: Pending folios */}
@@ -382,6 +392,22 @@ export function GerenteDashboard({
           <div className="p-4 space-y-4">
             <h2 className="text-lg font-semibold">Inventario Global y Alertas</h2>
             <GlobalInventoryView inventory={inventory} />
+          </div>
+        </TabsContent>
+
+        {/* Tab: Global list of all folios across hospitals */}
+        <TabsContent value="global-folios">
+          <div className="p-4 space-y-4">
+            <h2 className="text-lg font-semibold">Folios de todos los hospitales</h2>
+            <GlobalFoliosList folios={folios} />
+          </div>
+        </TabsContent>
+
+        {/* Tab: Hospital summary statistics */}
+        <TabsContent value="hospital-stats">
+          <div className="p-4 space-y-4">
+            <h2 className="text-lg font-semibold">Resumen por Hospital</h2>
+            <HospitalStats hospitals={hospitals} folios={folios} inventory={inventory} />
           </div>
         </TabsContent>
       </Tabs>
