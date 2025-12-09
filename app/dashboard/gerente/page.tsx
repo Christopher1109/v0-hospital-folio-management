@@ -1,17 +1,17 @@
-import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
-import { GerenteDashboard } from "@/components/gerente/gerente-dashboard"
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { GerenteDashboard } from "@/components/gerente/gerente-dashboard";
 
 export default async function GerentePage() {
-  const supabase = await createClient()
+  const supabase = await createClient();
 
   // 1. Usuario autenticado
   const {
     data: { user },
-  } = await supabase.auth.getUser()
+  } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/auth/login")
+    redirect("/auth/login");
   }
 
   // 2. Datos del usuario (debe ser GERENTE)
@@ -19,35 +19,34 @@ export default async function GerentePage() {
     .from("users")
     .select("*, hospital:hospitals(*)")
     .eq("id", user.id)
-    .single()
+    .single();
 
   if (userError || !userData || userData.role !== "gerente") {
-    // Si no es gerente, lo mandamos al dashboard general
-    redirect("/dashboard")
+    redirect("/dashboard");
   }
 
   // 3. Todos los hospitales (el gerente ve TODA la red)
   const { data: hospitals, error: hospitalsError } = await supabase
     .from("hospitals")
     .select("*")
-    .order("name", { ascending: true })
+    .order("name", { ascending: true });
 
   if (hospitalsError || !hospitals || hospitals.length === 0) {
-    // Sin hospitales no tiene sentido cargar nada más
     return (
       <GerenteDashboard
         user={userData}
         hospitals={[]}
         folios={[]}
         inventory={[]}
+        restockRequests={[]}
       />
-    )
+    );
   }
 
-  const hospitalIds = hospitals.map((h) => h.id)
+  const hospitalIds = hospitals.map((h) => h.id);
 
   // 4. Todos los folios de todos los hospitales
-  const { data: foliosRaw, error: foliosError } = await supabase
+  const { data: foliosRaw } = await supabase
     .from("folio_requests")
     .select(
       `
@@ -58,36 +57,63 @@ export default async function GerentePage() {
         *,
         product:products(*)
       )
-    `,
+    `
     )
     .in("hospital_id", hospitalIds)
-    .order("created_at", { ascending: false })
+    .order("created_at", { ascending: false });
 
-  const folios = foliosError || !foliosRaw ? [] : foliosRaw
+  const folios = foliosRaw || [];
 
   // 5. Inventario de todos los hospitales
-  const { data: inventoryRaw, error: inventoryError } = await supabase
+  const { data: inventoryRaw } = await supabase
     .from("inventory")
     .select(
       `
+      id,
       hospital_id,
       product_id,
       quantity,
       product:products(*),
       hospital:hospitals(*)
-    `,
+    `
+    )
+    .in("hospital_id", hospitalIds);
+
+  const inventory = inventoryRaw || [];
+
+  // 6. Solicitudes de reabasto (las “carpetas”)
+  // Ajusta nombres de columnas según tu tabla real
+  const { data: restockRaw } = await supabase
+    .from("hospital_restock_requests")
+    .select(
+      `
+      id,
+      hospital_id,
+      product_id,
+      current_quantity,
+      min_stock,
+      requested_qty,
+      requested_by_role,
+      assigned_to,
+      status,
+      created_at,
+      hospital:hospitals(*),
+      product:products(*)
+    `
     )
     .in("hospital_id", hospitalIds)
+    .order("created_at", { ascending: false });
 
-  const inventory = inventoryError || !inventoryRaw ? [] : inventoryRaw
+  const restockRequests = restockRaw || [];
 
-  // 6. Render del dashboard del gerente (igual patrón que los demás)
+  // 7. Render
   return (
     <GerenteDashboard
       user={userData}
       hospitals={hospitals}
       folios={folios}
       inventory={inventory}
+      restockRequests={restockRequests}
     />
-  )
+  );
 }
