@@ -30,6 +30,12 @@ export default async function DashboardPage() {
       redirect("/dashboard/almacen")
     case "gerente":
       redirect("/dashboard/gerente")
+    case "gerente_almacen":
+      // Route managers of the warehouse department to their dedicated panel
+      redirect("/dashboard/gerente-almacen")
+    case "cadena_suministro":
+      // Route supply chain managers to the logistics dashboard
+      redirect("/dashboard/cadena-suministro")
     default:
       redirect("/auth/login")
   }
