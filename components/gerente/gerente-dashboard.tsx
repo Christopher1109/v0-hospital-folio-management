@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import {
   Card,
-  CardContent,
+  CardContent, 
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
