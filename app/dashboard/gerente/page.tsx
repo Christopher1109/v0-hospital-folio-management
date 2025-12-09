@@ -14,32 +14,40 @@ export default async function GerentePage() {
     redirect("/auth/login")
   }
 
-  // 2. Datos del usuario
+  // 2. Datos del usuario (debe ser GERENTE)
   const { data: userData, error: userError } = await supabase
     .from("users")
     .select("*, hospital:hospitals(*)")
     .eq("id", user.id)
     .single()
 
-  // 👀 Ajusta "gerente" si tu rol en BD se llama distinto (ej. "manager")
   if (userError || !userData || userData.role !== "gerente") {
+    // Si no es gerente, lo mandamos al dashboard general
     redirect("/dashboard")
   }
 
-  // 3. Todos los hospitales
+  // 3. Todos los hospitales (el gerente ve TODA la red)
   const { data: hospitals, error: hospitalsError } = await supabase
     .from("hospitals")
     .select("*")
     .order("name", { ascending: true })
 
-  if (hospitalsError || !hospitals) {
-    redirect("/dashboard")
+  if (hospitalsError || !hospitals || hospitals.length === 0) {
+    // Sin hospitales no tiene sentido cargar nada más
+    return (
+      <GerenteDashboard
+        user={userData}
+        hospitals={[]}
+        folios={[]}
+        inventory={[]}
+      />
+    )
   }
 
   const hospitalIds = hospitals.map((h) => h.id)
 
   // 4. Todos los folios de todos los hospitales
-  const { data: folios } = await supabase
+  const { data: foliosRaw, error: foliosError } = await supabase
     .from("folio_requests")
     .select(
       `
@@ -55,25 +63,31 @@ export default async function GerentePage() {
     .in("hospital_id", hospitalIds)
     .order("created_at", { ascending: false })
 
+  const folios = foliosError || !foliosRaw ? [] : foliosRaw
+
   // 5. Inventario de todos los hospitales
-  const { data: inventory } = await supabase
+  const { data: inventoryRaw, error: inventoryError } = await supabase
     .from("inventory")
     .select(
       `
       hospital_id,
       product_id,
       quantity,
-      product:products(*)
+      product:products(*),
+      hospital:hospitals(*)
     `,
     )
     .in("hospital_id", hospitalIds)
 
+  const inventory = inventoryError || !inventoryRaw ? [] : inventoryRaw
+
+  // 6. Render del dashboard del gerente (igual patrón que los demás)
   return (
     <GerenteDashboard
       user={userData}
       hospitals={hospitals}
-      folios={folios || []}
-      inventory={inventory || []}
+      folios={folios}
+      inventory={inventory}
     />
   )
 }
